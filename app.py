@@ -1,24 +1,40 @@
+import os
+import json
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import Optional
-import json
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
-import numpy as np
+import openai
+from scipy.spatial.distance import cosine
 
-app = FastAPI()
+# Load your OpenAI API key from Replit secrets (will set up next)
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
-# Load scraped discourse posts
+# Load discourse data
 with open("discourse_data.json", "r") as f:
-    discourse_posts = json.load(f)
+    data = json.load(f)
 
-# Prepare text corpus
-corpus_texts = [
+discourse_posts = data['discourse']
+
+# Prepare corpus texts by joining title + all posts cooked text
+corpus = [
     post['title'] + " " + " ".join(p['cooked'] for p in post['posts'])
     for post in discourse_posts
 ]
-vectorizer = TfidfVectorizer(stop_words="english")
-corpus_embeddings = vectorizer.fit_transform(corpus_texts)
+
+# Function to get OpenAI embedding for a given text
+def get_embedding(text):
+    response = openai.Embedding.create(
+        input=text,
+        model="text-embedding-ada-002"
+    )
+    return response['data'][0]['embedding']
+
+# Generate embeddings for all corpus texts
+print("Generating embeddings for corpus... This may take a while.")
+corpus_embeddings = [get_embedding(text) for text in corpus]
+print("Embeddings ready!")
+
+app = FastAPI()
 
 class Query(BaseModel):
     question: str
@@ -26,15 +42,18 @@ class Query(BaseModel):
 
 @app.post("/api/")
 def answer_question(query: Query):
-    question_vec = vectorizer.transform([query.question])
-    similarities = cosine_similarity(question_vec, corpus_embeddings).flatten()
-    top_indices = similarities.argsort()[::-1][:3]
+    question_embedding = get_embedding(query.question)
+
+    # Calculate similarity with each corpus embedding
+    similarities = [(1 - cosine(question_embedding, emb), idx) for idx, emb in enumerate(corpus_embeddings)]
+    similarities.sort(reverse=True)
+    top_k = similarities[:3]  # top 3 matches
 
     answer = "Here's what I found:\n\n"
     links = []
-    for idx in top_indices:
+    for score, idx in top_k:
         post = discourse_posts[idx]
-        url = f"https://discourse.onlinedegree.iitm.ac.in/t/{post['id']}"
+        url = post.get('url', f"https://discourse.onlinedegree.iitm.ac.in/t/{post['id']}")
         answer += f"- {post['title']} ([link]({url}))\n"
         links.append({"url": url, "text": post['title']})
 
