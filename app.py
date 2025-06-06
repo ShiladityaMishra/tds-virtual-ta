@@ -1,20 +1,24 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import Optional
-import base64
-from sentence_transformers import SentenceTransformer, util
 import json
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
 
 app = FastAPI()
 
-# Load scraped data
+# Load scraped discourse posts
 with open("discourse_data.json", "r") as f:
     discourse_posts = json.load(f)
 
-# Load embedding model
-model = SentenceTransformer('paraphrase-albert-small-v2')  # smaller model to save space
-corpus = [post['title'] + " " + " ".join(p['cooked'] for p in post['posts']) for post in discourse_posts]
-corpus_embeddings = model.encode(corpus, convert_to_tensor=True)
+# Prepare text corpus
+corpus_texts = [
+    post['title'] + " " + " ".join(p['cooked'] for p in post['posts'])
+    for post in discourse_posts
+]
+vectorizer = TfidfVectorizer(stop_words="english")
+corpus_embeddings = vectorizer.fit_transform(corpus_texts)
 
 class Query(BaseModel):
     question: str
@@ -22,13 +26,13 @@ class Query(BaseModel):
 
 @app.post("/api/")
 def answer_question(query: Query):
-    question_embedding = model.encode(query.question, convert_to_tensor=True)
-    hits = util.semantic_search(question_embedding, corpus_embeddings, top_k=3)[0]
+    question_vec = vectorizer.transform([query.question])
+    similarities = cosine_similarity(question_vec, corpus_embeddings).flatten()
+    top_indices = similarities.argsort()[::-1][:3]
 
     answer = "Here's what I found:\n\n"
     links = []
-    for hit in hits:
-        idx = hit['corpus_id']
+    for idx in top_indices:
         post = discourse_posts[idx]
         url = f"https://discourse.onlinedegree.iitm.ac.in/t/{post['id']}"
         answer += f"- {post['title']} ([link]({url}))\n"
