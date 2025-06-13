@@ -1,23 +1,21 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer, util
+import torch
 import json
 import os
-import base64
-from PIL import Image
-from io import BytesIO
 
 app = FastAPI()
 
-# Load precomputed chunks
+# Load chunks from JSON
 with open("tds_combined_data.json", "r", encoding="utf-8") as f:
     data_chunks = json.load(f)
 
 if not data_chunks or not isinstance(data_chunks, list):
     raise RuntimeError("No valid content chunks loaded from tds_combined_data.json")
 
-# Load embedding model
-model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+# ✅ Load model in Hugging Face Docker space with writable cache
+model = SentenceTransformer("BAAI/bge-small-en-v1.5", cache_folder="/data", trust_remote_code=True)
 
 # Precompute embeddings
 for chunk in data_chunks:
@@ -25,25 +23,16 @@ for chunk in data_chunks:
 
 class Query(BaseModel):
     question: str
-    image: str | None = None  # base64 encoded image
+    image: str | None = None
 
 @app.post("/api/")
 async def query_api(payload: Query):
     question = payload.question
-    image = payload.image
 
-    if image:
-        try:
-            decoded_image = base64.b64decode(image)
-            img = Image.open(BytesIO(decoded_image))
-            question = pytesseract.image_to_string(img) + "\n" + question
-        except Exception as e:
-            return {"error": f"Failed to decode image: {e}"}
-
-    # Encode the question
+    # Encode the query
     question_embedding = model.encode(question, convert_to_tensor=True)
 
-    # Compute similarity with all chunks
+    # Compute similarities
     results = []
     for chunk in data_chunks:
         score = util.pytorch_cos_sim(question_embedding, chunk["embedding"])[0][0].item()
@@ -51,32 +40,28 @@ async def query_api(payload: Query):
             "text": chunk["text"],
             "similarity_score": score,
             "source_title": chunk.get("source_title", ""),
-            "source_url": chunk.get("source_url", ""),
-            "source_type": chunk.get("source_type", "")
+            "source_url": chunk.get("source_url", "")
         })
 
-    # Filter out low-similarity results
-    filtered_results = [r for r in results if r["similarity_score"] > 0.6]
-
-    if not filtered_results:
+    # Filter by similarity threshold
+    filtered = [r for r in results if r["similarity_score"] > 0.6]
+    if not filtered:
         return {
             "question": question,
-            "answer": "Sorry, I couldn't find a relevant answer. Please try rephrasing your question.",
+            "answer": "Sorry, I couldn't find a relevant answer. Please rephrase or provide more details.",
             "links": []
         }
 
-    # Get best match
-    best = max(filtered_results, key=lambda x: x["similarity_score"])
+    best = max(filtered, key=lambda x: x["similarity_score"])
 
     return {
         "question": question,
         "answer": best["text"],
         "source_title": best["source_title"],
         "source_url": best["source_url"],
-        "source_type": best["source_type"],
         "similarity_score": best["similarity_score"]
     }
 
 @app.get("/")
 def root():
-    return {"message": "TDS Virtual TA API is running!"}
+    return {"message": "TDS Virtual TA API is running"}
