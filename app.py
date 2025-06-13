@@ -1,67 +1,50 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-from sentence_transformers import SentenceTransformer, util
-import torch
+from typing import Optional
 import json
+import base64
+from io import BytesIO
+from PIL import Image
 import os
+
+from huggingface_hub import snapshot_download
+from sentence_transformers import SentenceTransformer, util
 
 app = FastAPI()
 
-# Load chunks from JSON
+# Step 1: Download model to a writable directory
+model_path = snapshot_download(repo_id="sentence-transformers/all-MiniLM-L6-v2", local_dir="./model", ignore_patterns=["*.msgpack"])
+model = SentenceTransformer(model_path)
+
+# Step 2: Load your preprocessed data
 with open("tds_combined_data.json", "r", encoding="utf-8") as f:
-    data_chunks = json.load(f)
+    documents = json.load(f)
 
-if not data_chunks or not isinstance(data_chunks, list):
-    raise RuntimeError("No valid content chunks loaded from tds_combined_data.json")
+# Step 3: Prepare corpus and embeddings
+corpus = [doc["content"] for doc in documents]
+corpus_embeddings = model.encode(corpus, convert_to_tensor=True)
 
-# ✅ Load model in Hugging Face Docker space with writable cache
-model = SentenceTransformer("BAAI/bge-small-en-v1.5", cache_folder="/data", trust_remote_code=True)
-
-# Precompute embeddings
-for chunk in data_chunks:
-    chunk["embedding"] = model.encode(chunk["text"], convert_to_tensor=True)
-
-class Query(BaseModel):
+# Step 4: Define input schema
+class QuestionRequest(BaseModel):
     question: str
-    image: str | None = None
+    image: Optional[str] = None  # base64-encoded image (optional)
 
+# Step 5: Define the API route
 @app.post("/api/")
-async def query_api(payload: Query):
-    question = payload.question
+def answer_question(payload: QuestionRequest):
+    query = payload.question.strip()
 
-    # Encode the query
-    question_embedding = model.encode(question, convert_to_tensor=True)
+    # Embed and search
+    query_embedding = model.encode(query, convert_to_tensor=True)
+    hits = util.semantic_search(query_embedding, corpus_embeddings, top_k=3)[0]
 
-    # Compute similarities
-    results = []
-    for chunk in data_chunks:
-        score = util.pytorch_cos_sim(question_embedding, chunk["embedding"])[0][0].item()
-        results.append({
-            "text": chunk["text"],
-            "similarity_score": score,
-            "source_title": chunk.get("source_title", ""),
-            "source_url": chunk.get("source_url", "")
-        })
-
-    # Filter by similarity threshold
-    filtered = [r for r in results if r["similarity_score"] > 0.6]
-    if not filtered:
-        return {
-            "question": question,
-            "answer": "Sorry, I couldn't find a relevant answer. Please rephrase or provide more details.",
-            "links": []
-        }
-
-    best = max(filtered, key=lambda x: x["similarity_score"])
+    best = hits[0]
+    best_doc = documents[best["corpus_id"]]
 
     return {
-        "question": question,
-        "answer": best["text"],
-        "source_title": best["source_title"],
-        "source_url": best["source_url"],
-        "similarity_score": best["similarity_score"]
+        "question": query,
+        "answer": best_doc["content"],
+        "source_title": best_doc.get("title", ""),
+        "source_url": best_doc.get("url", ""),
+        "similarity_score": float(best["score"])
     }
-
-@app.get("/")
-def root():
-    return {"message": "TDS Virtual TA API is running"}
