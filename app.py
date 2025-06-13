@@ -46,7 +46,11 @@ if not chunks:
     raise RuntimeError("No content in tds_combined_data.json")
 
 
-model = SentenceTransformer("all-MiniLM-L6-v2")
+
+
+# Always use the built-in Hugging Face cache path inside Docker
+model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2", cache_folder="/data", use_auth_token=True,trust_remote_code=True)
+
 texts = [c["text"] for c in chunks]
 embeddings = model.encode(texts)
 
