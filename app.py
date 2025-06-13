@@ -1,102 +1,82 @@
-import os
-
-# Ensure HuggingFace downloads go to a writable local folder
-os.environ["HF_HOME"] = "/data"
-os.environ["TRANSFORMERS_CACHE"] = "./hf_cache"
-os.environ["SENTENCE_TRANSFORMERS_HOME"] = "./hf_cache"
-
-
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from pydantic import BaseModel
-from typing import Optional
-from fastapi.middleware.cors import CORSMiddleware
-from sentence_transformers import SentenceTransformer
-from sklearn.metrics.pairwise import cosine_similarity
-import json, base64
+from sentence_transformers import SentenceTransformer, util
+import json
+import os
+import base64
 from PIL import Image
 from io import BytesIO
-import pytesseract
 
 app = FastAPI()
 
-# CORS for testing
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Load data and embeddings
+# Load precomputed chunks
 with open("tds_combined_data.json", "r", encoding="utf-8") as f:
-    raw_data = json.load(f)
+    data_chunks = json.load(f)
 
-chunks = []
-for d in raw_data:
-    text = d.get("content", "").strip()
-    if len(text.split()) >= 5:
-        chunks.append({
-            "text": text,
-            "source": d.get("title", ""),
-            "url": d.get("original_url", ""),
-            "type": d.get("type", "")
-        })
+if not data_chunks or not isinstance(data_chunks, list):
+    raise RuntimeError("No valid content chunks loaded from tds_combined_data.json")
 
-if not chunks:
-    raise RuntimeError("No content in tds_combined_data.json")
+# Load embedding model
+model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
+# Precompute embeddings
+for chunk in data_chunks:
+    chunk["embedding"] = model.encode(chunk["text"], convert_to_tensor=True)
 
-
-
-# Always use the built-in Hugging Face cache path inside Docker
-
-
-# 👇 Load the token from Hugging Face secret environment
-hf_token = os.getenv("HUGGINGFACE_HUB_TOKEN")
-
-# 👇 Optional: ensure a writable cache location
-os.environ["HF_HOME"] = "/data"
-
-model = SentenceTransformer(
-    "sentence-transformers/all-MiniLM-L6-v2",
-    cache_folder="/data",
-    token=hf_token,  # 👈 replaces use_auth_token
-    trust_remote_code=True
-)
-
-
-texts = [c["text"] for c in chunks]
-embeddings = model.encode(texts)
-
-class QuestionInput(BaseModel):
+class Query(BaseModel):
     question: str
-    image: Optional[str] = None
-
-def extract_text_from_image(img_str):
-    try:
-        image = Image.open(BytesIO(base64.b64decode(img_str)))
-        return pytesseract.image_to_string(image)
-    except Exception:
-        return ""
+    image: str | None = None  # base64 encoded image
 
 @app.post("/api/")
-async def answer_question(q: QuestionInput):
-    query = q.question.strip()
-    if q.image:
-        query += " " + extract_text_from_image(q.image)
+async def query_api(payload: Query):
+    question = payload.question
+    image = payload.image
 
-    query_vec = model.encode([query])
-    sims = cosine_similarity(query_vec, embeddings).flatten()
-    idx = sims.argmax()
-    match = chunks[idx]
+    if image:
+        try:
+            decoded_image = base64.b64decode(image)
+            img = Image.open(BytesIO(decoded_image))
+            question = pytesseract.image_to_string(img) + "\n" + question
+        except Exception as e:
+            return {"error": f"Failed to decode image: {e}"}
+
+    # Encode the question
+    question_embedding = model.encode(question, convert_to_tensor=True)
+
+    # Compute similarity with all chunks
+    results = []
+    for chunk in data_chunks:
+        score = util.pytorch_cos_sim(question_embedding, chunk["embedding"])[0][0].item()
+        results.append({
+            "text": chunk["text"],
+            "similarity_score": score,
+            "source_title": chunk.get("source_title", ""),
+            "source_url": chunk.get("source_url", ""),
+            "source_type": chunk.get("source_type", "")
+        })
+
+    # Filter out low-similarity results
+    filtered_results = [r for r in results if r["similarity_score"] > 0.6]
+
+    if not filtered_results:
+        return {
+            "question": question,
+            "answer": "Sorry, I couldn't find a relevant answer. Please try rephrasing your question.",
+            "links": []
+        }
+
+    # Get best match
+    best = max(filtered_results, key=lambda x: x["similarity_score"])
+
     return {
-        "question": q.question,
-        "answer": match["text"],
-        "source_title": match["source"],
-        "source_url": match["url"],
-        "similarity_score": float(sims[idx])
+        "question": question,
+        "answer": best["text"],
+        "source_title": best["source_title"],
+        "source_url": best["source_url"],
+        "source_type": best["source_type"],
+        "similarity_score": best["similarity_score"]
     }
 
 @app.get("/")
 def root():
-    return {"msg": "API is live"}
+    return {"message": "TDS Virtual TA API is running!"}
