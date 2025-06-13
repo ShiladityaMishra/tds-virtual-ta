@@ -5,3 +5,6 @@ pydantic
 pytesseract
 sentence-transformers
 scikit-learn
+transformers
+huggingface-hub
+
