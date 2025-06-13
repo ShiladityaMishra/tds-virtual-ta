@@ -9,6 +9,8 @@ from PIL import Image
 from io import BytesIO
 import pytesseract
 
+app = FastAPI()
+
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -77,3 +79,5 @@ async def answer_question(payload: QuestionInput):
 @app.get("/")
 def index():
     return {"msg": "TDS Virtual TA is running."}
+
+
