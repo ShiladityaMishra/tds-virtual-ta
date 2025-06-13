@@ -1,6 +1,7 @@
 fastapi
 uvicorn
+pillow
+pydantic
+pytesseract
 sentence-transformers
 scikit-learn
-pillow
-pytesseract
