@@ -7,4 +7,5 @@ sentence-transformers
 scikit-learn
 transformers
 huggingface-hub
+torch
 
