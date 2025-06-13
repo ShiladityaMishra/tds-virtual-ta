@@ -2,82 +2,74 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import Optional
 from fastapi.middleware.cors import CORSMiddleware
-
-import json
-import base64
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
+import json, base64
 from PIL import Image
 from io import BytesIO
 import pytesseract
 
 app = FastAPI()
 
-from sentence_transformers import SentenceTransformer
-from sklearn.metrics.pairwise import cosine_similarity
+# CORS for testing
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# --------- Load data ---------
+# Load data and embeddings
 with open("tds_combined_data.json", "r", encoding="utf-8") as f:
     raw_data = json.load(f)
 
 chunks = []
-for entry in raw_data:
-    content = entry.get("content", "").strip()
-    if len(content.split()) >= 5:
+for d in raw_data:
+    text = d.get("content", "").strip()
+    if len(text.split()) >= 5:
         chunks.append({
-            "text": content,
-            "source": entry.get("title", "Untitled"),
-            "url": entry.get("original_url"),
-            "type": entry.get("type", "unknown")
+            "text": text,
+            "source": d.get("title", ""),
+            "url": d.get("original_url", ""),
+            "type": d.get("type", "")
         })
 
 if not chunks:
-    raise RuntimeError("❌ No content loaded from tds_combined_data.json")
+    raise RuntimeError("No content in tds_combined_data.json")
 
-# --------- Embed ---------
 model = SentenceTransformer("paraphrase-MiniLM-L3-v2")
 texts = [c["text"] for c in chunks]
 embeddings = model.encode(texts)
-
-# --------- Setup ---------
-app = FastAPI()
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["POST"],
-    allow_headers=["*"],
-)
 
 class QuestionInput(BaseModel):
     question: str
     image: Optional[str] = None
 
-@app.post("/api/")
-async def answer_question(payload: QuestionInput):
-    query = payload.question.strip()
-    if payload.image:
-        image_data = base64.b64decode(payload.image)
-        image = Image.open(BytesIO(image_data))
-        query += " " + pytesseract.image_to_string(image)
+def extract_text_from_image(img_str):
+    try:
+        image = Image.open(BytesIO(base64.b64decode(img_str)))
+        return pytesseract.image_to_string(image)
+    except Exception:
+        return ""
 
-    if not query:
-        return {"error": "Empty question."}
+@app.post("/api/")
+async def answer_question(q: QuestionInput):
+    query = q.question.strip()
+    if q.image:
+        query += " " + extract_text_from_image(q.image)
 
     query_vec = model.encode([query])
-    scores = cosine_similarity(query_vec, embeddings).flatten()
-    top_idx = scores.argmax()
-    top = chunks[top_idx]
-
+    sims = cosine_similarity(query_vec, embeddings).flatten()
+    idx = sims.argmax()
+    match = chunks[idx]
     return {
-        "question": payload.question,
-        "answer": top["text"],
-        "source_title": top["source"],
-        "source_url": top["url"],
-        "source_type": top["type"],
-        "similarity_score": float(scores[top_idx])
+        "question": q.question,
+        "answer": match["text"],
+        "source_title": match["source"],
+        "source_url": match["url"],
+        "similarity_score": float(sims[idx])
     }
 
 @app.get("/")
-def index():
-    return {"msg": "TDS Virtual TA is running."}
-
-
+def root():
+    return {"msg": "API is live"}
