@@ -1,13 +1,16 @@
 import os
+
+# ✅ Redirect Hugging Face model cache to /tmp
+os.environ["TRANSFORMERS_CACHE"] = "/tmp"
+os.environ["HF_HOME"] = "/tmp"
+
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import Optional
 import json
 from sentence_transformers import SentenceTransformer, util
 
-# Force cache to /tmp to avoid PermissionError
-os.environ["TRANSFORMERS_CACHE"] = "/tmp"
-os.environ["HF_HOME"] = "/tmp"
+
 
 app = FastAPI()
 
