@@ -1,7 +1,7 @@
 import os
 
 # Ensure HuggingFace downloads go to a writable local folder
-os.environ["HF_HOME"] = "./hf_cache"
+os.environ["HF_HOME"] = "/data"
 os.environ["TRANSFORMERS_CACHE"] = "./hf_cache"
 os.environ["SENTENCE_TRANSFORMERS_HOME"] = "./hf_cache"
 
@@ -49,7 +49,21 @@ if not chunks:
 
 
 # Always use the built-in Hugging Face cache path inside Docker
-model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2", cache_folder="/data", use_auth_token=True,trust_remote_code=True)
+
+
+# 👇 Load the token from Hugging Face secret environment
+hf_token = os.getenv("HUGGINGFACE_HUB_TOKEN")
+
+# 👇 Optional: ensure a writable cache location
+os.environ["HF_HOME"] = "/data"
+
+model = SentenceTransformer(
+    "sentence-transformers/all-MiniLM-L6-v2",
+    cache_folder="/data",
+    token=hf_token,  # 👈 replaces use_auth_token
+    trust_remote_code=True
+)
+
 
 texts = [c["text"] for c in chunks]
 embeddings = model.encode(texts)
