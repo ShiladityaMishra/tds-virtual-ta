@@ -20,6 +20,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app.py .
 COPY tds_combined_data.json .
 
+RUN python3 -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2', cache_folder='/data')"
+
 # Expose HF default port
 EXPOSE 7860
 
