@@ -1,3 +1,11 @@
+import os
+
+# Ensure HuggingFace downloads go to a writable local folder
+os.environ["HF_HOME"] = "./hf_cache"
+os.environ["TRANSFORMERS_CACHE"] = "./hf_cache"
+os.environ["SENTENCE_TRANSFORMERS_HOME"] = "./hf_cache"
+
+
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import Optional
@@ -37,7 +45,8 @@ for d in raw_data:
 if not chunks:
     raise RuntimeError("No content in tds_combined_data.json")
 
-model = SentenceTransformer("paraphrase-MiniLM-L3-v2")
+
+model = SentenceTransformer("all-MiniLM-L6-v2")
 texts = [c["text"] for c in chunks]
 embeddings = model.encode(texts)
 
