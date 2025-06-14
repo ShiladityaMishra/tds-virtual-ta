@@ -30,7 +30,7 @@ def answer_question(payload: QuestionRequest):
 
     hits = util.semantic_search(query_embedding, corpus_embeddings, top_k=3)[0]
 
-        best_hit = hits[0]
+    best_hit = hits[0]
     if best_hit["score"] < 0.5:
         return {
             "question": query,
