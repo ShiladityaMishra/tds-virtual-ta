@@ -36,22 +36,17 @@ def answer_question(payload: QuestionRequest):
     query_embedding = model.encode(query, convert_to_tensor=True)
     hits = util.semantic_search(query_embedding, corpus_embeddings, top_k=3)[0]
     best = hits[0]
-    best_score = float(best["score"])
-
-    if best_score < SIMILARITY_THRESHOLD:
-        return {
-            "question": query,
-            "answer": "Sorry, I couldn't find a relevant answer in the course content or Discourse posts.",
-            "source_title": None,
-            "source_url": None,
-            "similarity_score": best_score
-        }
-
     best_doc = documents[best["corpus_id"]]
+    
+    # Build fake "links" for Promptfoo format compatibility
+    links = []
+    if best_doc.get("url"):
+        links.append({
+            "url": best_doc["url"],
+            "text": best_doc.get("title", "Relevant discussion")
+        })
+
     return {
-        "question": query,
         "answer": best_doc["content"],
-        "source_title": best_doc.get("title", ""),
-        "source_url": best_doc.get("url", ""),
-        "similarity_score": best_score
+        "links": links  # Mandatory for Promptfoo validation
     }
