@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from typing import Optional
 import json
 from sentence_transformers import SentenceTransformer, util
+model.encode(["test"])  # warm-up
 
 app = FastAPI()
 
