@@ -1,13 +1,16 @@
 import os
+
+# ✅ Safe cache paths for HF Spaces
+os.environ["TRANSFORMERS_CACHE"] = "/tmp"
+os.environ["HF_HOME"] = "/tmp"
+
 import json
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import Optional
 from sentence_transformers import SentenceTransformer, util
 
-# ✅ Safe cache paths for HF Spaces
-os.environ["TRANSFORMERS_CACHE"] = "/tmp"
-os.environ["HF_HOME"] = "/tmp"
+
 
 app = FastAPI()
 
