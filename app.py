@@ -30,7 +30,14 @@ def answer_question(payload: QuestionRequest):
 
     hits = util.semantic_search(query_embedding, corpus_embeddings, top_k=3)[0]
 
-    best_hit = hits[0]
+        best_hit = hits[0]
+    if best_hit["score"] < 0.5:
+        return {
+            "question": query,
+            "answer": "Sorry, I couldn't find a relevant answer for that question.",
+            "links": []
+        }
+
     best_doc = documents[best_hit["corpus_id"]]
 
     answer = best_doc["content"]
