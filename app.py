@@ -1,21 +1,23 @@
 import os
 
-# ✅ Safe cache paths for HF Spaces
+# ✅ Redirect Hugging Face model cache to /tmp
 os.environ["TRANSFORMERS_CACHE"] = "/tmp"
 os.environ["HF_HOME"] = "/tmp"
 
-import json
+
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import Optional
+import json
 from sentence_transformers import SentenceTransformer, util
-
 
 
 app = FastAPI()
 
-# ✅ Load model and corpus
+# Load model
 model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+
+# Load your scraped + combined data
 with open("tds_combined_data.json", "r", encoding="utf-8") as f:
     documents = json.load(f)
 
@@ -30,35 +32,23 @@ class QuestionRequest(BaseModel):
 def answer_question(payload: QuestionRequest):
     query = payload.question.strip()
     query_embedding = model.encode(query, convert_to_tensor=True)
-
     hits = util.semantic_search(query_embedding, corpus_embeddings, top_k=3)[0]
+    best = hits[0]
+    best_doc = documents[best["corpus_id"]]
 
-    best_hit = hits[0]
-    if best_hit["score"] < 0.5:
-        return {
-            "question": query,
-            "answer": "Sorry, I couldn't find a relevant answer for that question.",
-            "links": []
-        }
-
-    best_doc = documents[best_hit["corpus_id"]]
-
-    answer = best_doc["content"]
-    url = best_doc.get("url", "")
-    title = best_doc.get("title", "Relevant Discussion")
-
-    # ✅ Always return a list of links, even if empty
-    links = [{"url": url, "text": title}] if url else []
+    # New: construct links for Promptfoo validation
+    links = []
+    if "original_url" in best_doc:
+        links.append({
+            "url": best_doc["original_url"],
+            "text": best_doc.get("title", "source")
+        })
 
     return {
-    "question": query,
-    "answer": best_doc["content"],
-    "links": [
-        {
-            "url": best_doc.get("url", ""),
-            "text": best_doc.get("title", "")
-        }
-    ],
-    "similarity_score": float(best["score"])
-}
-
+        "question": query,
+        "answer": best_doc["content"],
+        "source_title": best_doc.get("title", ""),
+        "source_url": best_doc.get("original_url", ""),
+        "similarity_score": float(best["score"]),
+        "links": links  # ✅ For promptfoo compatibility
+    }
