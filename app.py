@@ -1,30 +1,23 @@
 import os
-
-# ✅ Redirect Hugging Face model cache to /tmp
-os.environ["TRANSFORMERS_CACHE"] = "/tmp"
-os.environ["HF_HOME"] = "/tmp"
-
+import json
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import Optional
-import json
 from sentence_transformers import SentenceTransformer, util
-import torch
+
+# ✅ Safe cache paths for HF Spaces
+os.environ["TRANSFORMERS_CACHE"] = "/tmp"
+os.environ["HF_HOME"] = "/tmp"
 
 app = FastAPI()
 
-# Load model (uses /tmp for cache)
+# ✅ Load model and corpus
 model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
-
-# Load your scraped + combined data
 with open("tds_combined_data.json", "r", encoding="utf-8") as f:
     documents = json.load(f)
 
 corpus = [doc["content"] for doc in documents]
 corpus_embeddings = model.encode(corpus, convert_to_tensor=True)
-
-# 🔒 Threshold to reject irrelevant results
-SIMILARITY_THRESHOLD = 0.45  # Adjust between 0.3 to 0.6 as needed
 
 class QuestionRequest(BaseModel):
     question: str
@@ -34,19 +27,21 @@ class QuestionRequest(BaseModel):
 def answer_question(payload: QuestionRequest):
     query = payload.question.strip()
     query_embedding = model.encode(query, convert_to_tensor=True)
+
     hits = util.semantic_search(query_embedding, corpus_embeddings, top_k=3)[0]
-    best = hits[0]
-    best_doc = documents[best["corpus_id"]]
-    
-    # Build fake "links" for Promptfoo format compatibility
-    links = []
-    if best_doc.get("url"):
-        links.append({
-            "url": best_doc["url"],
-            "text": best_doc.get("title", "Relevant discussion")
-        })
+
+    best_hit = hits[0]
+    best_doc = documents[best_hit["corpus_id"]]
+
+    answer = best_doc["content"]
+    url = best_doc.get("url", "")
+    title = best_doc.get("title", "Relevant Discussion")
+
+    # ✅ Always return a list of links, even if empty
+    links = [{"url": url, "text": title}] if url else []
 
     return {
-        "answer": best_doc["content"],
-        "links": links  # Mandatory for Promptfoo validation
+        "question": query,
+        "answer": answer,
+        "links": links
     }
