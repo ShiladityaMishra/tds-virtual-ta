@@ -9,12 +9,13 @@ from pydantic import BaseModel
 from typing import Optional
 import json
 from sentence_transformers import SentenceTransformer, util
-model.encode(["test"])  # warm-up
+  # warm-up
 
 app = FastAPI()
 
 # Load model
 model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+model.encode(["test"])
 
 # Load documents
 with open("tds_combined_data.json", "r", encoding="utf-8") as f:
