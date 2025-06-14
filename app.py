@@ -1,6 +1,4 @@
 import os
-
-# Redirect cache folders to writable location
 os.environ["TRANSFORMERS_CACHE"] = "/tmp"
 os.environ["HF_HOME"] = "/tmp"
 
@@ -9,13 +7,12 @@ from pydantic import BaseModel
 from typing import Optional
 import json
 from sentence_transformers import SentenceTransformer, util
-  # warm-up
 
 app = FastAPI()
 
 # Load model
 model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
-model.encode(["test"])
+model.encode(["test"])  # warm-up
 
 # Load documents
 with open("tds_combined_data.json", "r", encoding="utf-8") as f:
@@ -26,7 +23,7 @@ corpus_embeddings = model.encode(corpus, convert_to_tensor=True)
 
 class QuestionRequest(BaseModel):
     question: str
-    image: Optional[str] = None
+    image: Optional[str] = None  # It will be file://... from YAML
 
 @app.post("/api/")
 def answer_question(payload: QuestionRequest):
@@ -51,7 +48,7 @@ def answer_question(payload: QuestionRequest):
         return {
             "question": query,
             "answer": answer,
-            "links": links  # <-- This must be a list of dicts with "url" and "text"
+            "links": links
         }
 
     except Exception as e:
