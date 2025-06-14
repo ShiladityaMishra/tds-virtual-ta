@@ -30,27 +30,33 @@ class QuestionRequest(BaseModel):
 
 @app.post("/api/")
 def answer_question(payload: QuestionRequest):
-    query = payload.question.strip()
-    query_embedding = model.encode(query, convert_to_tensor=True)
-    hits = util.semantic_search(query_embedding, corpus_embeddings, top_k=3)[0]
-    best = hits[0]
-    best_doc = documents[best["corpus_id"]]
+    try:
+        query = payload.question.strip()
+        query_embedding = model.encode(query, convert_to_tensor=True)
+        hits = util.semantic_search(query_embedding, corpus_embeddings, top_k=3)[0]
+        best = hits[0]
+        best_doc = documents[best["corpus_id"]]
 
-    # Create answer
-    answer = best_doc.get("content", "")
+        answer = best_doc.get("content", "")
+        url = best_doc.get("url", "")
+        title = best_doc.get("title", "Link")
 
-    # Add links (empty if not found)
-    url = best_doc.get("url", "")
-    title = best_doc.get("title", "Link")
+        links = []
+        if url:
+            links.append({
+                "url": url,
+                "text": title or "Link"
+            })
 
-    links = []
-    if url:
-        links.append({
-            "url": url,
-            "text": title or "Link"
-        })
+        return {
+            "question": query,
+            "answer": answer,
+            "links": links  # <-- This must be a list of dicts with "url" and "text"
+        }
 
-    return {
-        "answer": answer,
-        "links": links
-    }
+    except Exception as e:
+        return {
+            "question": payload.question,
+            "answer": "An error occurred while processing your question.",
+            "links": []
+        }
