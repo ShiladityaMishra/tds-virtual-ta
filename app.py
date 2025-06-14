@@ -51,7 +51,14 @@ def answer_question(payload: QuestionRequest):
     links = [{"url": url, "text": title}] if url else []
 
     return {
-        "question": query,
-        "answer": answer,
-        "links": links
-    }
+    "question": query,
+    "answer": best_doc["content"],
+    "links": [
+        {
+            "url": best_doc.get("url", ""),
+            "text": best_doc.get("title", "")
+        }
+    ],
+    "similarity_score": float(best["score"])
+}
+
