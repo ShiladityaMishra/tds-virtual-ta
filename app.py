@@ -1,9 +1,8 @@
 import os
 
-# ✅ Redirect Hugging Face model cache to /tmp
+# Redirect cache folders to writable location
 os.environ["TRANSFORMERS_CACHE"] = "/tmp"
 os.environ["HF_HOME"] = "/tmp"
-
 
 from fastapi import FastAPI
 from pydantic import BaseModel
@@ -11,13 +10,12 @@ from typing import Optional
 import json
 from sentence_transformers import SentenceTransformer, util
 
-
 app = FastAPI()
 
 # Load model
 model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
-# Load your scraped + combined data
+# Load documents
 with open("tds_combined_data.json", "r", encoding="utf-8") as f:
     documents = json.load(f)
 
@@ -36,19 +34,21 @@ def answer_question(payload: QuestionRequest):
     best = hits[0]
     best_doc = documents[best["corpus_id"]]
 
-    # New: construct links for Promptfoo validation
+    # Create answer
+    answer = best_doc.get("content", "")
+
+    # Add links (empty if not found)
+    url = best_doc.get("url", "")
+    title = best_doc.get("title", "Link")
+
     links = []
-    if "original_url" in best_doc:
+    if url:
         links.append({
-            "url": best_doc["original_url"],
-            "text": best_doc.get("title", "source")
+            "url": url,
+            "text": title or "Link"
         })
 
     return {
-        "question": query,
-        "answer": best_doc["content"],
-        "source_title": best_doc.get("title", ""),
-        "source_url": best_doc.get("original_url", ""),
-        "similarity_score": float(best["score"]),
-        "links": links  # ✅ For promptfoo compatibility
+        "answer": answer,
+        "links": links
     }
