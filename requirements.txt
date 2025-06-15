@@ -8,4 +8,8 @@ scikit-learn
 transformers
 huggingface-hub
 torch
+uvicorn
+requests
+python-dotenv
+numpy
 
