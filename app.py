@@ -9,8 +9,6 @@ os.environ["HF_HOME"] = "/tmp"
 from fastapi import FastAPI, Request
 from sentence_transformers import SentenceTransformer, util
 
-
-
 # Initialize FastAPI app
 app = FastAPI()
 
@@ -74,14 +72,21 @@ async def answer_question(request: Request):
         best = hits[0]
         best_doc = documents[best["corpus_id"]]
 
-        answer = best_doc.get("content", "")
-        url = best_doc.get("url", "")
+        context_passage = best_doc.get("content", "")
+        url = best_doc.get("original_url", "")
         title = best_doc.get("title", "Link")
+        doc_type = best_doc.get("type", "unknown")
+
+        # Simulate an LLM-style answer with context
+        answer = f"Based on related forum discussions, here’s what we found:\n\n{context_passage}"
 
         return {
             "question": question,
             "answer": answer,
-            "links": [{"url": url, "text": title}] if url else []
+            "context_passage": context_passage,
+            "similarity_score": float(best["score"]),
+            "links": [{"url": url, "text": title}] if url else [],
+            "source_type": doc_type
         }
 
     except Exception as e:
