@@ -1,11 +1,9 @@
 import os
 import json
 import re
-
 # ✅ Avoid HF Spaces permission errors
 os.environ["TRANSFORMERS_CACHE"] = "/tmp"
 os.environ["HF_HOME"] = "/tmp"
-
 import traceback
 import numpy as np
 import requests
@@ -31,7 +29,7 @@ app.add_middleware(
 )
 
 class QueryRequest(BaseModel):
-    question: str
+    question: str = None
     image: str = None  # optional base64 string
 
 # ✅ Load data
@@ -74,6 +72,7 @@ def get_ocr(image_data):
     response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
     if response.status_code == 200:
         return response.json()['choices'][0]['message']['content']
+    print(f"❌ OCR failed: {response.status_code}: {response.text}")
     return ""
 
 def ask_llm(question, context):
@@ -97,11 +96,15 @@ def ask_llm(question, context):
     response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
     if response.status_code == 200:
         return response.json()["choices"][0]["message"]["content"]
+    print(f"❌ LLM call failed: {response.status_code} - {response.text}")
     return "Sorry, I could not generate an answer."
 
 @app.post("/api/")
 async def answer_query(query: QueryRequest):
     try:
+        if not query or not isinstance(query.question, str):
+            return {"answer": "Invalid request: 'question' is required.", "links": []}
+
         question = query.question.strip()
         if not question:
             return {"answer": "Missing question.", "links": []}
@@ -121,6 +124,11 @@ async def answer_query(query: QueryRequest):
             "Content-Type": "application/json"
         }
         resp = requests.post("https://api.openai.com/v1/embeddings", headers=headers, json=payload)
+
+        if resp.status_code != 200:
+            print(f"❌ Embedding API failed: {resp.status_code} — {resp.text}")
+            return {"answer": "Failed to process embedding request.", "links": []}
+
         embedding = np.array(resp.json()["data"][0]["embedding"])
 
         # Find top 3 matches
@@ -129,16 +137,15 @@ async def answer_query(query: QueryRequest):
         links = []
         for h in hits:
             doc = documents[h["corpus_id"]]
-            if doc.get("original_url"):
-                links.append({
-                    "url": doc["original_url"],
-                    "text": doc.get("title", "Link")
-                })
+            url = doc.get("original_url", "")
+            title = doc.get("title", "Link")
+            if url:
+                links.append({"url": url, "text": title})
 
         answer = ask_llm(question, context)
 
         return {
-            "answer": answer,
+            "answer": answer or "No answer generated.",
             "links": links or []
         }
 
