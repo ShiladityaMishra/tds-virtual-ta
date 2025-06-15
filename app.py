@@ -46,21 +46,23 @@ class QuestionRequest(BaseModel):
     image: Optional[str] = None
 
 # API endpoint
+from fastapi import Request
+
 @app.post("/api/")
-def answer_question(payload: QuestionRequest):
+async def answer_question(request: Request):
     try:
-        print(f"Received question: {payload.question}")
-        query = payload.question.strip()
+        # Manually parse raw JSON to catch errors from malformed body
+        raw = await request.body()
+        data = json.loads(raw)
 
-        # Encode query
-        query_embedding = model.encode(query, convert_to_tensor=True)
-        print(f"Query embedding shape: {query_embedding.shape}")
-        print(f"Corpus embedding shape: {corpus_embeddings.shape}")
+        question = data.get("question", "").strip()
+        image = data.get("image", None)
 
-        # Semantic search
+        print(f"Received question: {question}")
+
+        # Proceed as usual
+        query_embedding = model.encode(question, convert_to_tensor=True)
         hits = util.semantic_search(query_embedding, corpus_embeddings, top_k=3)[0]
-        print(f"Top hits: {hits}")
-
         best = hits[0]
         best_doc = documents[best["corpus_id"]]
 
@@ -70,23 +72,28 @@ def answer_question(payload: QuestionRequest):
 
         links = []
         if url:
-            links.append({
-                "url": url,
-                "text": title or "Link"
-            })
+            links.append({"url": url, "text": title})
 
         return {
-            "question": query,
+            "question": question,
             "answer": answer,
             "links": links
         }
 
+    except json.JSONDecodeError as jde:
+        print("❌ Invalid JSON received.")
+        return {
+            "question": None,
+            "answer": "Invalid JSON body sent to API. Please fix the formatting.",
+            "links": [],
+            "debug_error": str(jde)
+        }
     except Exception as e:
-        print("❌ Error occurred while answering question:")
+        print("❌ General error:")
         traceback.print_exc()
         return {
-            "question": payload.question,
-            "answer": "An error occurred while processing your question.",
+            "question": None,
+            "answer": "Unexpected server error occurred.",
             "links": [],
-            "debug_error": str(e)  # helps promptfoo show the error
+            "debug_error": str(e)
         }
