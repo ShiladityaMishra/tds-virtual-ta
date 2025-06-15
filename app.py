@@ -38,36 +38,36 @@ print("Encoding corpus...")
 corpus_embeddings = model.encode(corpus, convert_to_tensor=True)
 print("✅ Corpus encoding complete.")
 
-
 @app.post("/api/")
 async def answer_question(request: Request):
     try:
-        # Try to safely parse JSON
+        raw_body = await request.body()
+        body_text = raw_body.decode("utf-8").strip()
+
+        # 🔧 Hack fix: remove trailing comma if it exists
+        if body_text.endswith(",}"):
+            body_text = body_text.replace(",}", "}")
+
         try:
-            data = await request.json()
-        except Exception as parse_err:
-            print("❌ Could not parse JSON body")
+            data = json.loads(body_text)
+        except json.JSONDecodeError as e:
             return {
                 "question": None,
-                "answer": "Invalid JSON. Probably due to template error (trailing comma, bad format).",
+                "answer": "🚨 Invalid JSON received (possibly due to Promptfoo templating error).",
                 "links": [],
-                "debug_error": str(parse_err)
+                "debug_error": str(e)
             }
 
         question = data.get("question", "").strip()
-        image = data.get("image")  # optional, may be None
-
         if not question:
             return {
                 "question": None,
-                "answer": "No question provided in the request.",
+                "answer": "No question received.",
                 "links": [],
-                "debug_error": "Missing 'question' field."
+                "debug_error": "Missing 'question' field"
             }
 
         print(f"Received question: {question}")
-
-        # Encode query
         query_embedding = model.encode(question, convert_to_tensor=True)
         hits = util.semantic_search(query_embedding, corpus_embeddings, top_k=3)[0]
         best = hits[0]
@@ -79,10 +79,7 @@ async def answer_question(request: Request):
 
         links = []
         if url:
-            links.append({
-                "url": url,
-                "text": title or "Link"
-            })
+            links.append({"url": url, "text": title})
 
         return {
             "question": question,
@@ -91,11 +88,11 @@ async def answer_question(request: Request):
         }
 
     except Exception as e:
-        print("❌ General error while processing question")
+        print("❌ Unhandled error:")
         traceback.print_exc()
         return {
             "question": None,
-            "answer": "Server error occurred.",
+            "answer": "Server crashed. See debug log.",
             "links": [],
             "debug_error": str(e)
         }
