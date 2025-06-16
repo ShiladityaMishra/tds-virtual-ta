@@ -1,23 +1,17 @@
 import os
 import json
 import re
-# ✅ Avoid HF Spaces permission errors
-os.environ["TRANSFORMERS_CACHE"] = "/tmp"
-os.environ["HF_HOME"] = "/tmp"
 import traceback
 import numpy as np
-import requests
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer, util
-from dotenv import load_dotenv
-
-# ✅ Load OpenAI API key
-load_dotenv()
-OPENAI_API_KEY = os.getenv("OPENAI_API")
-GPT_MODEL = "gpt-4o"
-
+from transformers import pipeline
+from PIL import Image
+import pytesseract
+import base64
+from io import BytesIO
 
 app = FastAPI()
 app.add_middleware(
@@ -46,58 +40,33 @@ corpus = [doc.get("content", "") for doc in documents]
 
 # ✅ Embed corpus
 print("Encoding corpus...")
-model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
-model.encode(["test"])
-corpus_embeddings = model.encode(corpus, convert_to_tensor=True)
+embedding_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+embedding_model.encode(["test"])
+corpus_embeddings = embedding_model.encode(corpus, convert_to_tensor=True)
 print("✅ Corpus ready")
 
+# ✅ Load LLM
+print("Loading LLM pipeline...")
+llm = pipeline("text-generation", model="tiiuae/falcon-7b-instruct", device=0)
+print("✅ LLM ready")
+
 def get_ocr(image_data):
-    data_url = f"data:image/webp;base64,{image_data}"
-    headers = {
-        "Authorization": f"Bearer {OPENAI_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "model": GPT_MODEL,
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": "Extract all text from this image."},
-                    {"type": "image_url", "image_url": {"url": data_url}}
-                ]
-            }
-        ]
-    }
-    response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
-    if response.status_code == 200:
-        return response.json()['choices'][0]['message']['content']
-    print(f"❌ OCR failed: {response.status_code}: {response.text}")
-    return ""
+    try:
+        image_bytes = base64.b64decode(image_data)
+        image = Image.open(BytesIO(image_bytes))
+        return pytesseract.image_to_string(image)
+    except Exception as e:
+        print(f"❌ OCR error: {e}")
+        return ""
 
 def ask_llm(question, context):
-    system_prompt = f"""
-    You are a TA for IITM's Tools in Data Science course. Below is the student's query and relevant past material. Respond helpfully and concisely.
-
-    Context:
-    {context}
-    """
-    payload = {
-        "model": GPT_MODEL,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": question}
-        ]
-    }
-    headers = {
-        "Authorization": f"Bearer {OPENAI_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
-    if response.status_code == 200:
-        return response.json()["choices"][0]["message"]["content"]
-    print(f"❌ LLM call failed: {response.status_code} - {response.text}")
-    return "Sorry, I could not generate an answer."
+    try:
+        prompt = f"Question: {question}\nContext: {context}\nAnswer:"
+        response = llm(prompt, max_new_tokens=200, do_sample=False)[0]["generated_text"]
+        return response.split("Answer:")[-1].strip()
+    except Exception as e:
+        print(f"❌ LLM error: {e}")
+        return "Sorry, I could not generate an answer."
 
 @app.post("/api/")
 async def answer_query(query: QueryRequest):
@@ -114,22 +83,7 @@ async def answer_query(query: QueryRequest):
             ocr_text = get_ocr(query.image)
             question += "\n" + ocr_text
 
-        # Embed query
-        payload = {
-            "model": "text-embedding-3-small",
-            "input": [question]
-        }
-        headers = {
-            "Authorization": f"Bearer {OPENAI_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        resp = requests.post("https://api.openai.com/v1/embeddings", headers=headers, json=payload)
-
-        if resp.status_code != 200:
-            print(f"❌ Embedding API failed: {resp.status_code} — {resp.text}")
-            return {"answer": "Failed to process embedding request.", "links": []}
-
-        embedding = np.array(resp.json()["data"][0]["embedding"])
+        embedding = embedding_model.encode(question, convert_to_tensor=True)
 
         # Find top 3 matches
         hits = util.semantic_search(embedding, corpus_embeddings, top_k=3)[0]
