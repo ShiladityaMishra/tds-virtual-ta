@@ -1,4 +1,9 @@
 import os
+
+# Set HF cache directory to writable /tmp path
+os.environ["TRANSFORMERS_CACHE"] = "/tmp"
+os.environ["HF_HOME"] = "/tmp"
+
 import json
 import re
 import traceback
