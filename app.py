@@ -12,6 +12,126 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer, util
+from PIL import Image
+import pytesseract
+import base64
+from io import BytesIO
+import requests
+from dotenv import load_dotenv
+
+load_dotenv()
+HF_TOKEN = os.getenv("HF_TOKEN")
+
+app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+class QueryRequest(BaseModel):
+    question: str = None
+    image: str = None  # optional base64 string
+
+# ✅ Load data
+print("Loading documents...")
+try:
+    with open("tds_combined_data.json", "r", encoding="utf-8") as f:
+        documents = json.load(f)
+except Exception as e:
+    print("❌ Failed to load tds_combined_data.json")
+    traceback.print_exc()
+    documents = []
+
+corpus = [doc.get("content", "") for doc in documents]
+
+# ✅ Embed corpus
+print("Encoding corpus...")
+embedding_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+embedding_model.encode(["test"])
+corpus_embeddings = embedding_model.encode(corpus, convert_to_tensor=True)
+print("✅ Corpus ready")
+
+def get_ocr(image_data):
+    try:
+        image_bytes = base64.b64decode(image_data)
+        image = Image.open(BytesIO(image_bytes))
+        return pytesseract.image_to_string(image)
+    except Exception as e:
+        print(f"❌ OCR error: {e}")
+        return ""
+
+def ask_llm(question, context):
+    try:
+        prompt = f"Question: {question}\nContext: {context}\nAnswer:"
+        headers = {
+            "Authorization": f"Bearer {HF_TOKEN}",
+            "Content-Type": "application/json"
+        }
+        response = requests.post(
+            "https://api-inference.huggingface.co/models/google/flan-t5-base",
+            headers=headers,
+            json={"inputs": prompt}
+        )
+        if response.status_code == 200:
+            return response.json()[0]["generated_text"]
+        else:
+            print(f"❌ HF Inference API failed: {response.status_code}: {response.text}")
+            return "Sorry, I could not generate an answer."
+    except Exception as e:
+        print(f"❌ LLM error: {e}")
+        return "Sorry, I could not generate an answer."
+
+@app.post("/api/")
+async def answer_query(query: QueryRequest):
+    try:
+        if not query or not isinstance(query.question, str):
+            return {"answer": "Invalid request: 'question' is required.", "links": []}
+
+        question = query.question.strip()
+        if not question:
+            return {"answer": "Missing question.", "links": []}
+
+        if query.image:
+            print("📷 Image received, extracting text...")
+            ocr_text = get_ocr(query.image)
+            question += "\n" + ocr_text
+
+        embedding = embedding_model.encode(question, convert_to_tensor=True)
+
+        # Find top 3 matches
+        hits = util.semantic_search(embedding, corpus_embeddings, top_k=3)[0]
+        context = "\n---\n".join([documents[h["corpus_id"]].get("content", "") for h in hits])
+        links = []
+        for h in hits:
+            doc = documents[h["corpus_id"]]
+            url = doc.get("original_url", "")
+            title = doc.get("title", "Link")
+            if url:
+                links.append({"url": url, "text": title})
+
+        answer = ask_llm(question, context)
+
+        return {
+            "answer": answer or "No answer generated.",
+            "links": links or []
+        }
+
+    except Exception as e:
+        print("❌ Exception:", e)
+        traceback.print_exc()
+        return {"answer": "An error occurred while processing your request.", "links": []}
+
+import json
+import re
+import traceback
+import numpy as np
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from sentence_transformers import SentenceTransformer, util
 from transformers import pipeline
 from PIL import Image
 import pytesseract
