@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 
 # ✅ Load OpenAI API key
 load_dotenv()
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API")
 GPT_MODEL = "gpt-4o"
 
 
