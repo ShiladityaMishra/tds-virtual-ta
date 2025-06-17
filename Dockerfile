@@ -12,11 +12,14 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy source code
+# Create static directory if it doesn't exist
+RUN mkdir -p /app/static
+
+# Copy the entire app
 COPY . .
 
-# Expose port (default for FastAPI with uvicorn)
-EXPOSE 8000
+# Expose FastAPI port
+EXPOSE 7860
 
-# Start the FastAPI server
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+# Start the FastAPI app (change to app.py or main.py as needed)
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7860"]
