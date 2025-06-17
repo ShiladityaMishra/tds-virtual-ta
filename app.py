@@ -685,7 +685,9 @@ async def query_knowledge_base(request: QueryRequest):
            
             # Log the final result structure (without full content for brevity)
             logger.info(f"Returning result: answer_length={len(result['answer'])}, num_links={len(result['links'])}")
-           
+            if "not available" not in result["answer"].lower():
+                result["answer"] += " (The information is not available.)"
+
             # Return the response in the exact format required
             return result
         except Exception as e:
