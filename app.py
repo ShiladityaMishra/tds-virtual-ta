@@ -425,7 +425,7 @@ async def generate_answer(question, relevant_results, max_retries=2):
            
             # Prepare improved prompt
             prompt = f"""Answer the following question based ONLY on the provided context.
-            "If you cannot answer the question based on the context, say: 'This information is not available.'"
+            If you cannot answer the question based on the context, say "I don't have enough information to answer this question.(not available)"
 
            
             Context:
