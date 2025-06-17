@@ -424,26 +424,23 @@ async def generate_answer(question, relevant_results, max_retries=2):
                 context += f"\n\n{source_type} (URL: {result['url']}):\n{result['content'][:1500]}"
            
             # Prepare improved prompt
-            prompt = f"""Answer the following question based ONLY on the provided context.
-            If the context doesn’t contain enough information, you may say: “The information is not available.”  Do not use any other words or phrases.
-
-           
-            Context:
-            {context}
-           
-            Question: {question}
-           
-            Return your response in this exact format:
-            1. A comprehensive yet concise answer
-            2. A "Sources:" section that lists the URLs and relevant text snippets you used to answer
-           
-            Sources must be in this exact format:
-            Sources:
+            prompt = f"""You are a helpful assistant answering based only on the given context.
+            If there is no useful information in the context, respond honestly and concisely.
+            Avoid guessing. If the answer is unknown from the context, you may say "The information is not available" — but only if absolutely nothing is relevant.
+            
+            Respond in this format:
+            
+            1. Answer: <concise answer here>
+            2. Sources:
             1. URL: [exact_url_1], Text: [brief quote or description]
             2. URL: [exact_url_2], Text: [brief quote or description]
-           
-            Make sure the URLs are copied exactly from the context without any changes.
+            
+            Context:
+            {context}
+            
+            Question: {question}
             """
+
            
             logger.info("Sending request to LLM API")
             # Call OpenAI API through aipipe proxy
