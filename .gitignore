@@ -1,2 +1,13 @@
-hf_cache/
+# Ignore directories
+downloaded_threads/
+markdown_files/
+__pycache__/
+venv/
+.venv/
+myvenv/
+
+# Ignore files
 .env
+preprocess.py
+*.pyc
+.DS_Store
