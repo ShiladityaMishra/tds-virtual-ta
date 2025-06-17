@@ -425,7 +425,7 @@ async def generate_answer(question, relevant_results, max_retries=2):
            
             # Prepare improved prompt
             prompt = f"""Answer the following question based ONLY on the provided context.
-            Say exactly this if you cannot answer based on context: "The information is not available." Do not use any other words or phrases.
+            If the context doesn’t contain enough information, you may say: “The information is not available.”  Do not use any other words or phrases.
 
            
             Context:
@@ -685,8 +685,10 @@ async def query_knowledge_base(request: QueryRequest):
            
             # Log the final result structure (without full content for brevity)
             logger.info(f"Returning result: answer_length={len(result['answer'])}, num_links={len(result['links'])}")
-            if "not available" not in result["answer"].lower():
-                result["answer"] += " (The information is not available.)"
+            # Only append fallback message if no relevant info found at all
+            if not relevant_results or "not available" in result["answer"].lower():
+                result["answer"] = "The information is not available."
+
 
             # Return the response in the exact format required
             return result
