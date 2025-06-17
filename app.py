@@ -651,7 +651,7 @@ async def query_knowledge_base(request: QueryRequest):
             if not relevant_results:
                 logger.info("No relevant results found")
                 return {
-                    "answer": "I'm sorry, I doesn't know the answer because this information is not available yet.",
+                    "answer": "This information is not available.",
                     "links": []
                 }
            
