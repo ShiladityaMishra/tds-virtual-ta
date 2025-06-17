@@ -425,7 +425,7 @@ async def generate_answer(question, relevant_results, max_retries=2):
            
             # Prepare improved prompt
             prompt = f"""Answer the following question based ONLY on the provided context.
-            If you cannot answer the question based on the context, say "The information is not available"
+            Say exactly this if you cannot answer based on context: "The information is not available." Do not use any other words or phrases.
 
            
             Context:
