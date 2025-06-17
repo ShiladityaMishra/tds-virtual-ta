@@ -1,28 +1,22 @@
+# Use official Python image
 FROM python:3.10-slim
 
-# Set working dir
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Set working directory
 WORKDIR /app
 
-# Install system dependencies for Pillow & Tesseract
-RUN apt-get update && apt-get install -y \
-    tesseract-ocr \
-    libglib2.0-0 \
-    libsm6 \
-    libxrender1 \
-    libxext6 \
- && apt-get clean
-
-# Copy and install Python deps
+# Install dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy app + data
-COPY app.py .
+# Copy source code
+COPY . .
 
-RUN python3 -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2', cache_folder='/data')"
+# Expose port (default for FastAPI with uvicorn)
+EXPOSE 8000
 
-# Expose HF default port
-EXPOSE 7860
-
-# Run the FastAPI app
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7860"]
+# Start the FastAPI server
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
