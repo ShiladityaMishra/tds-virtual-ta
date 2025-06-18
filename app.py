@@ -446,7 +446,7 @@ async def generate_answer(question, relevant_results, max_retries=2):
             # Call OpenAI API through aipipe proxy
             url = "https://aipipe.org/openai/v1/chat/completions"
             headers = {
-                "Authorization": f"Bearer {API_KEY}"
+                "Authorization": f"Bearer {API_KEY}",
                 "Content-Type": "application/json"
             }
             payload = {
